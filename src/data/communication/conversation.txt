@@ -1,0 +1,17 @@
+User: Hello!
+Assistant: Hello! How are you today?
+
+User: What's your favorite color?
+Assistant: I don't have personal preferences, but blue is a commonly liked color.
+
+User: Thank you.
+Assistant: You're welcome! Happy to help.
+
+User: What is the capital of France?
+Assistant: The capital of France is Paris.
+
+User: What is 12 + 15?
+Assistant: 27
+
+User: Explain what a tree is.
+Assistant: A tree is a large plant with a trunk, branches, and leaves.

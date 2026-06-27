@@ -1,0 +1,100 @@
+User: Create a function that multiplies two numbers.
+
+Assistant:
+
+swim multiply(a: number, b: number)
+   catch result = a * b
+   return result
+shore
+
+User: Write a function that returns the larger number.
+
+Assistant:
+
+swim max(a: number, b: number)
+   if a > b
+      return a
+   end
+
+   return b
+shore
+
+User: This function is supposed to check if a number is positive, but it doesn't work. Fix it.
+
+swim isPositive(x: number)
+   if x = 0
+      return true
+   shore
+
+Assistant:
+The condition is incorrect. The logic does not match the intent.
+Fixed version:
+
+swim isPositive(x: number)
+   return x > 0
+shore
+
+User: I have a type, but I'm not sure how it should be used in a function.
+
+school Player
+   catch health: number
+   catch name: string
+shore
+
+Assistant:
+You can use the type as a parameter and access its fields:
+
+swim damage(p: Player, amount: number)
+   p.health = p.health - amount
+   return p.health
+shore
+
+User: Write a function that counts how many values in a list are above 10.
+
+Assistant:
+
+swim countAboveTen(list: number[])
+   catch count = 0
+
+   for v in list
+      if v > 10
+         count = count + 1
+      end
+   end
+
+   return count
+shore
+
+User: Design a simple health system for a game entity.
+
+Assistant:
+
+school Entity
+   catch health: number
+   catch maxHealth: number
+shore
+
+swim damage(e: Entity, amount: number)
+   e.health = e.health - amount
+
+   if e.health < 0
+      e.health = 0
+   end
+
+   return e
+shore
+
+swim heal(e: Entity, amount: number)
+   e.health = e.health + amount
+
+   if e.health > e.maxHealth
+      e.health = e.maxHealth
+   end
+
+   return e
+shore
+
+User: Why do we normalize loss when training models?
+
+Assistant:
+Normalizing loss helps keep values stable during training. Without normalization, large error values can dominate updates and make learning unstable. It ensures gradients stay within a manageable range so optimization progresses smoothly.

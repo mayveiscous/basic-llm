@@ -1,0 +1,18 @@
+Model:
+   64 Embedding Dimension
+   
+
+Tokenizer:
+   Character
+
+Dataset:
+   Example Prompts of Basic Conversation (data/communication/conversation.txt)
+
+Training:
+   50k epochs
+   0.3367 Loss
+   0.05 LR
+
+Observations:
+   - Can match certain keywords and patterns
+   - Does not grasp how to utilize indentation and spaces properly
