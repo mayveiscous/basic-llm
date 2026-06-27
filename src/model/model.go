@@ -1,4 +1,4 @@
-package main
+package model
 
 import (
 	"llm/src/tensor"
@@ -72,6 +72,13 @@ type Buffers struct {
 	dKb     *tensor.Tensor
 }
 
+func FillRandom(data []float64, fanIn int) {
+	scale := math.Sqrt(1.0 / float64(fanIn))
+	for i := range data {
+		data[i] = (rand.Float64()*2.0 - 1.0) * scale
+	}
+}
+
 func NewBuffers(cfg GPTConfig, batchSize int) *Buffers {
 	ffnDim := cfg.EmbeddingDim * 4
 	numTokens := batchSize * cfg.SeqLen
@@ -128,14 +135,14 @@ func NewGPTModel(cfg GPTConfig) *GPTModel {
 		Beta2:            tensor.NewTensor([]int{cfg.EmbeddingDim}),
 	}
 
-	fillRandom(m.EmbeddingWeights.Data, cfg.VocabSize)
-	fillRandom(m.PosWeights.Data, cfg.SeqLen)
-	fillRandom(m.Wq.Data, cfg.EmbeddingDim)
-	fillRandom(m.Wk.Data, cfg.EmbeddingDim)
-	fillRandom(m.Wv.Data, cfg.EmbeddingDim)
-	fillRandom(m.W1.Data, cfg.EmbeddingDim)
-	fillRandom(m.W2.Data, ffnDim)
-	fillRandom(m.Wlm.Data, cfg.EmbeddingDim)
+	FillRandom(m.EmbeddingWeights.Data, cfg.VocabSize)
+	FillRandom(m.PosWeights.Data, cfg.SeqLen)
+	FillRandom(m.Wq.Data, cfg.EmbeddingDim)
+	FillRandom(m.Wk.Data, cfg.EmbeddingDim)
+	FillRandom(m.Wv.Data, cfg.EmbeddingDim)
+	FillRandom(m.W1.Data, cfg.EmbeddingDim)
+	FillRandom(m.W2.Data, ffnDim)
+	FillRandom(m.Wlm.Data, cfg.EmbeddingDim)
 	for i := range m.Gamma1.Data {
 		m.Gamma1.Data[i] = 1.0
 	}

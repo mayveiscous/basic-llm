@@ -4,17 +4,11 @@ import (
 	"fmt"
 	"llm/src/tensor"
 	"llm/src/tokenizer"
+	modelPack "llm/src/model"
 	"math"
 	"math/rand"
 	"os"
 )
-
-func fillRandom(data []float64, fanIn int) {
-	scale := math.Sqrt(1.0 / float64(fanIn))
-	for i := range data {
-		data[i] = (rand.Float64()*2.0 - 1.0) * scale
-	}
-}
 
 func main() {
 	trainingPath := "src/data/books/womenInTheFactory.txt"
@@ -33,13 +27,13 @@ func main() {
 	allTokens := tkzr.Encode(source)
 
 	// build model
-	cfg := GPTConfig{
+	cfg := modelPack.GPTConfig{
 		VocabSize:    len(tkzr.CharToID),
 		SeqLen:       seqLen,
 		EmbeddingDim: embeddingDim,
 	}
 
-	model := NewGPTModel(cfg)
+	model := modelPack.NewGPTModel(cfg)
 
 	vocabSize := len(tkzr.CharToID)
 	ffnDim := embeddingDim * 4
@@ -67,7 +61,7 @@ func main() {
 	batchX := make([]int, numTokens)
 	batchY := make([]int, numTokens)
  
-	buf := NewBuffers(cfg, batchSize)
+	buf := modelPack.NewBuffers(cfg, batchSize)
 
 	// training settings
 	learningRate := 0.05
