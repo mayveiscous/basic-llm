@@ -50,28 +50,42 @@ func Softmax(slice []float64) {
 	}
 }
 
+// loss calculation
 func CalculateCrossEntropy(logits *Tensor, targets []int) float64 {
 	numTokens := logits.Shape[0]
 	vocabSize := logits.Shape[1]
 	var totalLoss float64
 
-	for i := 0; i < numTokens; i++ {
+	for i := range numTokens {
+
+		// offsets
 		rowOffset := i * vocabSize
 		rowSlice := logits.Data[rowOffset : rowOffset+vocabSize]
 
+		// copy row so that softmax
+		// doesnt interfere with actual values
 		rowCopy := make([]float64, vocabSize)
 		copy(rowCopy, rowSlice)
 
+		// convert logits
+		// to probabilities
 		Softmax(rowCopy)
 
+		// grab target
 		correctTargetID := targets[i]
 		correctProb := rowCopy[correctTargetID]
 
+		// 	clamp
 		if correctProb < 1e-15 {
 			correctProb = 1e-15
 		}
+
+		// log probability
+		// less confident -> more loss
 		totalLoss += -math.Log(correctProb)
 	}
+	
+	// average loss
 	return totalLoss / float64(numTokens)
 }
 
@@ -79,7 +93,7 @@ func BackwardCrossEntropy(logits *Tensor, targets []int, dLogits *Tensor) {
 	numTokens := logits.Shape[0]
 	vocabSize := logits.Shape[1]
 
-	for i := 0; i < numTokens; i++ {
+	for i := range numTokens {
 		rowOffset := i * vocabSize
 
 		probs := make([]float64, vocabSize)
@@ -87,7 +101,12 @@ func BackwardCrossEntropy(logits *Tensor, targets []int, dLogits *Tensor) {
 		Softmax(probs)
 
 		correctTargetID := targets[i]
-		for j := 0; j < vocabSize; j++ {
+
+		for j := range vocabSize {
+			// compute gradient for each
+			// predicited probability
+
+			// negative number -> increase this logit
 			if j == correctTargetID {
 				dLogits.Data[rowOffset+j] = (probs[j] - 1.0) / float64(numTokens)
 			} else {
@@ -97,28 +116,38 @@ func BackwardCrossEntropy(logits *Tensor, targets []int, dLogits *Tensor) {
 	}
 }
 
+// normalize features
+// for each token
 func LayerNorm(x, gamma, beta, out, mean, variance *Tensor, numTokens, dim int) {
 	eps := 1e-5
-	for i := 0; i < numTokens; i++ {
+
+	// for each token
+	for i := range numTokens {
 		rowOffset := i * dim
 
+		// calculate mean
 		var m float64
-		for d := 0; d < dim; d++ {
+		for d := range dim {
 			m += x.Data[rowOffset+d]
 		}
 		m /= float64(dim)
 		mean.Data[i] = m
 
+		// compute variance
 		var v float64
-		for d := 0; d < dim; d++ {
+		for d := range dim {
 			diff := x.Data[rowOffset+d] - m
 			v += diff * diff
 		}
 		v /= float64(dim)
 		variance.Data[i] = v
 
+		// inverse standard deviation
 		invStd := 1.0 / math.Sqrt(v+eps)
-		for d := 0; d < dim; d++ {
+
+		// normalize using invStd
+		// and apply gamma and beta
+		for d := range dim {
 			xHat := (x.Data[rowOffset+d] - m) * invStd
 			out.Data[rowOffset+d] = gamma.Data[d]*xHat + beta.Data[d]
 		}
@@ -127,14 +156,18 @@ func LayerNorm(x, gamma, beta, out, mean, variance *Tensor, numTokens, dim int) 
 
 func LayerNormBackward(dOut, x, gamma, mean, variance, dX, dGamma, dBeta *Tensor, numTokens, dim int) {
 	eps := 1e-5
-	for i := 0; i < numTokens; i++ {
+
+
+	for i := range numTokens {
 		rowOffset := i * dim
 		m := mean.Data[i]
 		v := variance.Data[i]
 		invStd := 1.0 / math.Sqrt(v+eps)
 
+		
+		// accumulate param gradients
 		var dxHatSum, dxHatXhatSum float64
-		for d := 0; d < dim; d++ {
+		for d := range dim {
 			xHat := (x.Data[rowOffset+d] - m) * invStd
 			dGamma.Data[d] += dOut.Data[rowOffset+d] * xHat
 			dBeta.Data[d] += dOut.Data[rowOffset+d]
@@ -142,7 +175,8 @@ func LayerNormBackward(dOut, x, gamma, mean, variance, dX, dGamma, dBeta *Tensor
 			dxHatXhatSum += dOut.Data[rowOffset+d] * gamma.Data[d] * xHat
 		}
 
-		for d := 0; d < dim; d++ {
+		// propogate through normalization
+		for d := range dim {
 			xHat := (x.Data[rowOffset+d] - m) * invStd
 			dxHat := dOut.Data[rowOffset+d] * gamma.Data[d]
 			dX.Data[rowOffset+d] = invStd * (dxHat - dxHatSum/float64(dim) - xHat*dxHatXhatSum/float64(dim))

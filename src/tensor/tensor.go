@@ -35,14 +35,22 @@ func MatMulTranspose(a, b, c *Tensor, transposeA, transposeB bool) {
 	matMulImpl(a, b, c, transposeA, transposeB)
 }
 
+// matrix multiplication
 func matMulImpl(a, b, c *Tensor, transposeA, transposeB bool) {
+
+	// get rows and colums
 	aRows := a.Shape[0]
 	aCols := a.Shape[1]
+
+	// transposed, swap
 	if transposeA {
 		aRows, aCols = aCols, aRows
 	}
+
 	bRows := b.Shape[0]
 	bCols := b.Shape[1]
+
+
 	if transposeB {
 		bRows, bCols = bCols, bRows
 	}
@@ -51,39 +59,54 @@ func matMulImpl(a, b, c *Tensor, transposeA, transposeB bool) {
 	k := aCols
 	n := bCols
 
-	// Zero output.
+	// zero output.
 	for i := range c.Data {
 		c.Data[i] = 0
 	}
 
+	// split work across cores
 	numWorkers := runtime.NumCPU()
 	if m < 32 {
 		numWorkers = 1
 	}
 
+
 	var wg sync.WaitGroup
 	rowsPerWorker := (m + numWorkers - 1) / numWorkers
 
+	// store unchanged values
+	// transposition is fake
+	// in a flat array
 	aStoredCols := a.Shape[1]
 	bStoredCols := b.Shape[1]
 
+	// delegate work
 	for w := 0; w < numWorkers; w++ {
+		// determine start and end row
+		// for this worker
 		startRow := w * rowsPerWorker
 		endRow := (w + 1) * rowsPerWorker
+
+		// clamp
 		if endRow > m {
 			endRow = m
 		}
+
 		if startRow >= m {
 			break
 		}
+
 		wg.Add(1)
 		go func(start, end int) {
 			defer wg.Done()
-
+			
+			// determine matrix shape
 			switch {
 			case !transposeA && !transposeB:
 				for i := start; i < end; i++ {
 					cRow := c.Data[i*n : i*n+n]
+
+					// multiply matrices
 					for kk := 0; kk < k; kk++ {
 						aik := a.Data[i*k+kk]
 						bRow := b.Data[kk*n : kk*n+n]
@@ -142,5 +165,7 @@ func matMulImpl(a, b, c *Tensor, transposeA, transposeB bool) {
 			}
 		}(startRow, endRow)
 	}
+
+	
 	wg.Wait()
 }

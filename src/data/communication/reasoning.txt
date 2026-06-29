@@ -1,8 +1,0 @@
-User: Which is larger, 9 or 14?
-Assistant: 14 is larger.
-
-User: Is water wet?
-Assistant: Water makes other objects wet and is commonly described as wet.
-
-User: Which animal barks?
-Assistant: Dogs bark.

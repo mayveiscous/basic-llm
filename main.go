@@ -11,10 +11,18 @@ import (
 )
 
 func main() {
-	trainingPath := "src/data/communication/everything.txt"
-	seqLen := 128
+	trainingPath := "src/data/trainingData.txt"
+	seqLen := 64
 	batchSize := 4
 	embeddingDim := 128
+
+	// training settings
+	learningRate := 0.05
+	epochs := 25000
+
+	// debugging values
+	var lossSum float64
+	var lossCount int
 
 	// read training data 
 	bytes, err := os.ReadFile(trainingPath)
@@ -24,7 +32,7 @@ func main() {
 	source := string(bytes)
 	tkzr := tokenizer.NewTokenizer(source)
 	
-	// train the tokenizer
+	// train tokenizer
 	numMerges := 1000 
 	fmt.Println("Training BPE Tokenizer...")
 	tkzr.Train(source, numMerges)
@@ -65,14 +73,8 @@ func main() {
 	batchY := make([]int, numTokens)
 	buf := modelPack.NewBuffers(cfg, batchSize)
 
-	// training settings
-	learningRate := 0.05
-	epochs := 1500
-	var lossSum float64
-	var lossCount int
-
 	fmt.Println("Starting training loop...")
-	for step := 0; step < epochs; step++ {
+	for step := range epochs {
 		// zero values
 		tensor.Zero(dLogits)
 		tensor.Zero(dWlm)
@@ -88,7 +90,7 @@ func main() {
 		tensor.Zero(dBeta2)
 
 		// build batches
-		for b := 0; b < batchSize; b++ {
+		for b := range batchSize {
 			seqStart := rand.Intn(len(allTokens) - seqLen - 1)
 			for t := 0; t < seqLen; t++ {
 				flatIdx := b*seqLen + t
@@ -97,12 +99,13 @@ func main() {
 			}
 		}
 
-		// calculate loss & debug logits
+		// calculate loss
 		logits, cache := model.Forward(batchX, batchSize, buf)
 		loss := tensor.CalculateCrossEntropy(logits, batchY)
 		lossSum += loss
 		lossCount++
 
+		// debug every 100 steps
 		if step%100 == 0 || step == epochs-1 {
 			avgLoss := lossSum / float64(lossCount)
 			fmt.Printf("Step %d | Avg Loss: %.4f\n", step, avgLoss)
@@ -110,6 +113,7 @@ func main() {
 			lossCount = 0
 		}
 
+		// calculate backward loss
 		tensor.BackwardCrossEntropy(logits, batchY, dLogits)
 
 		// decay lr
