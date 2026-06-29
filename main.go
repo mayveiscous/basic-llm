@@ -2,40 +2,45 @@ package main
 
 import (
 	"fmt"
+	modelPack "llm/src/model"
 	"llm/src/tensor"
 	"llm/src/tokenizer"
-	modelPack "llm/src/model"
 	"math"
 	"math/rand"
 	"os"
 )
 
 func main() {
-	trainingPath := "src/data/books/womenInTheFactory.txt"
-	seqLen := 32
+	trainingPath := "src/data/communication/everything.txt"
+	seqLen := 128
 	batchSize := 4
-	embeddingDim := 64
+	embeddingDim := 128
 
-	// read training data
-	// and tokenize it
+	// read training data 
 	bytes, err := os.ReadFile(trainingPath)
 	if err != nil {
 		panic(err)
 	}
 	source := string(bytes)
 	tkzr := tokenizer.NewTokenizer(source)
+	
+	// train the tokenizer
+	numMerges := 1000 
+	fmt.Println("Training BPE Tokenizer...")
+	tkzr.Train(source, numMerges)
+	fmt.Printf("BPE Training complete. Final Vocab Size: %d\n", len(tkzr.Vocab))
+
 	allTokens := tkzr.Encode(source)
+
+	vocabSize := len(tkzr.Vocab)
 
 	// build model
 	cfg := modelPack.GPTConfig{
-		VocabSize:    len(tkzr.CharToID),
+		VocabSize:    vocabSize,
 		SeqLen:       seqLen,
 		EmbeddingDim: embeddingDim,
 	}
-
 	model := modelPack.NewGPTModel(cfg)
-
-	vocabSize := len(tkzr.CharToID)
 	ffnDim := embeddingDim * 4
 	numTokens := batchSize * seqLen
 
@@ -52,26 +57,21 @@ func main() {
 	dBeta1 := tensor.NewTensor([]int{embeddingDim})
 	dGamma2 := tensor.NewTensor([]int{embeddingDim})
 	dBeta2 := tensor.NewTensor([]int{embeddingDim})
-
 	dLN1In := tensor.NewTensor([]int{numTokens, embeddingDim})
 	dLN2In := tensor.NewTensor([]int{numTokens, embeddingDim})
-
 	dAttnResidualSkip := tensor.NewTensor([]int{numTokens, embeddingDim})
 
 	batchX := make([]int, numTokens)
 	batchY := make([]int, numTokens)
- 
 	buf := modelPack.NewBuffers(cfg, batchSize)
 
 	// training settings
 	learningRate := 0.05
-	epochs := 50000
-
+	epochs := 1500
 	var lossSum float64
 	var lossCount int
 
 	fmt.Println("Starting training loop...")
-
 	for step := 0; step < epochs; step++ {
 		// zero values
 		tensor.Zero(dLogits)
@@ -90,7 +90,6 @@ func main() {
 		// build batches
 		for b := 0; b < batchSize; b++ {
 			seqStart := rand.Intn(len(allTokens) - seqLen - 1)
-
 			for t := 0; t < seqLen; t++ {
 				flatIdx := b*seqLen + t
 				batchX[flatIdx] = allTokens[seqStart+t]
@@ -98,7 +97,7 @@ func main() {
 			}
 		}
 
-		// calculate loss & debug
+		// calculate loss & debug logits
 		logits, cache := model.Forward(batchX, batchSize, buf)
 		loss := tensor.CalculateCrossEntropy(logits, batchY)
 		lossSum += loss
@@ -140,13 +139,13 @@ func main() {
 			embRowOffset := tokenID * embeddingDim
 			posRowOffset := (i % seqLen) * embeddingDim
 			tokenRowOffset := i * embeddingDim
+
 			for d := 0; d < embeddingDim; d++ {
 				g := dLN1In.Data[tokenRowOffset+d]
 				model.EmbeddingWeights.Data[embRowOffset+d] -= decayedLR * g
 				model.PosWeights.Data[posRowOffset+d] -= decayedLR * g
 			}
 		}
-
 
 		// clip gradients
 		clipNorm := 1.0

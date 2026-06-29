@@ -173,32 +173,40 @@ func (m *GPTModel) UpdateWeights(learningRate float64, dWlm, dW2, dW1, dWq, dWk,
 
 func (m *GPTModel) Generate(tkzr *tokenizer.Tokenizer, prompt string, maxNewTokens int, temperature float64) string {
 	promptTokens := tkzr.Encode(prompt)
-	buf := NewBuffers(m.Config, 1)
+	
+	generationBatchSize := 1 
+	buf := NewBuffers(m.Config, generationBatchSize)
+	
 	fullSeq := make([]int, len(promptTokens), len(promptTokens)+maxNewTokens)
 	copy(fullSeq, promptTokens)
-
+	
 	for i := 0; i < maxNewTokens; i++ {
 		window := make([]int, m.Config.SeqLen)
 		start := len(fullSeq) - m.Config.SeqLen
+		
 		if start < 0 {
 			pad := m.Config.SeqLen - len(fullSeq)
 			for j := 0; j < pad; j++ {
-				window[j] = 0
+				window[j] = 0 
 			}
 			copy(window[pad:], fullSeq)
 		} else {
 			copy(window, fullSeq[start:])
 		}
 
-		logits, _ := m.Forward(window, 1, buf)
+		logits, _ := m.Forward(window, generationBatchSize, buf)
 		vocabSize := m.Config.VocabSize
+		
 		lastPosLogits := logits.Data[(m.Config.SeqLen-1)*vocabSize : m.Config.SeqLen*vocabSize]
+		
 		nextToken := sample(lastPosLogits, temperature)
 		fullSeq = append(fullSeq, nextToken)
 	}
-
+	
 	return tkzr.Decode(fullSeq[len(promptTokens):])
 }
+
+
 
 func sample(logits []float64, temperature float64) int {
 	if temperature == 0 {
