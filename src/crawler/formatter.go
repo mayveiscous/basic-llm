@@ -27,8 +27,10 @@ func ExtractQA(text string) []Sample {
 			continue
 		}
 
-		// simple heuristic: question-like line
-		// very crude approach.
+		// simple placeholder heuristic: question-like line
+
+		// in production
+		// should take a more professioanl approach.
 		if strings.Contains(q, "?") {
 			samples = append(samples, Sample{
 				User:      q,

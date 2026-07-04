@@ -75,7 +75,6 @@ func main() {
 
 	source := string(bytes)
 
-
 	// merge web + local dataset
 	for _, s := range samples {
 		source += "\n<User> " + s.User + "\n<Assistant> " + s.Assistant + "\n"
@@ -88,6 +87,10 @@ func main() {
 	tkzr := tokenizer.NewTokenizer(source)
 
 	// train tokenizer
+
+	// O(merges * corpus)
+	// no priority queue
+	// production systems should use a heap + incremental count updates.
 	numMerges := 1000
 	fmt.Println("Training BPE Tokenizer...")
 	tkzr.Train(source, numMerges)

@@ -18,7 +18,6 @@ func CleanText(text string) string {
 	_ = lower
 	
 	// remove nav-like noise
-	// probably not necessary but wtv
 	for _, b := range badFragments {
 		text = strings.ReplaceAll(text, b, "")
 		lower = strings.ToLower(text)
