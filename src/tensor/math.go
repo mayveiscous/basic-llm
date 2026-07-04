@@ -51,12 +51,17 @@ func Softmax(slice []float64) {
 }
 
 // loss calculation
-func CalculateCrossEntropy(logits *Tensor, targets []int) float64 {
+func CalculateCrossEntropy(logits *Tensor, targets []int, mask []float32) float64 {
 	numTokens := logits.Shape[0]
 	vocabSize := logits.Shape[1]
 	var totalLoss float64
+	count := 0.0
 
 	for i := range numTokens {
+		// skipp masked tokens
+		if mask[i] == 0 {
+			continue
+		}
 
 		// offsets
 		rowOffset := i * vocabSize
@@ -83,17 +88,32 @@ func CalculateCrossEntropy(logits *Tensor, targets []int) float64 {
 		// log probability
 		// less confident -> more loss
 		totalLoss += -math.Log(correctProb)
+		count++
 	}
 	
 	// average loss
-	return totalLoss / float64(numTokens)
+	return totalLoss / count
 }
 
-func BackwardCrossEntropy(logits *Tensor, targets []int, dLogits *Tensor) {
+func BackwardCrossEntropy(logits *Tensor, targets []int, mask []float32, dLogits *Tensor) {
 	numTokens := logits.Shape[0]
 	vocabSize := logits.Shape[1]
 
+	// count non-masked tokens
+	count := 0.0
+	
 	for i := range numTokens {
+		if mask[i] == 0 {
+			continue
+		}
+		count++
+	}
+
+	for i := range numTokens{
+		if mask[i] == 0 {
+			continue
+		}
+
 		rowOffset := i * vocabSize
 
 		probs := make([]float64, vocabSize)
@@ -107,11 +127,13 @@ func BackwardCrossEntropy(logits *Tensor, targets []int, dLogits *Tensor) {
 			// predicited probability
 
 			// negative number -> increase this logit
+
+			grad := probs[j]
 			if j == correctTargetID {
-				dLogits.Data[rowOffset+j] = (probs[j] - 1.0) / float64(numTokens)
-			} else {
-				dLogits.Data[rowOffset+j] = probs[j] / float64(numTokens)
+				grad -= 1.0
 			}
+
+			dLogits.Data[rowOffset+j] = grad / count
 		}
 	}
 }

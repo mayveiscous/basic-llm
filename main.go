@@ -5,40 +5,99 @@ import (
 	modelPack "llm/src/model"
 	"llm/src/tensor"
 	"llm/src/tokenizer"
+	"llm/src/crawler"
 	"math"
 	"math/rand"
 	"os"
 )
 
+func read() []crawler.Sample {
+	urls := []string{
+		"https://en.wikipedia.org/wiki/Artificial_intelligence",
+		"https://en.wikipedia.org/wiki/Neural_network",
+		"https://en.wikipedia.org/wiki/Transformer_(machine_learning_model)",
+	}
+
+	var allSamples []crawler.Sample
+
+	for _, url := range urls {
+		html, err := crawler.FetchURL(url)
+		if err != nil {
+   		 	fmt.Println("fetch failed:", url, err)
+    		continue
+		}
+
+		text := crawler.StripHTML(html)
+		text = crawler.CleanText(text)
+
+		if text == "" {
+			continue
+		}
+
+		if len(text) > 200 {
+			allSamples = append(allSamples, crawler.Sample{
+				User: text[:len(text)/2],
+				Assistant: text[len(text)/2:],
+			})
+		}
+	}
+
+	err := crawler.WriteSamples("src/data/dataset.txt", allSamples)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return allSamples
+}
+
 func main() {
-	trainingPath := "src/data/trainingData.txt"
+	trainingPath := "src/data/dataset.txt"
 	seqLen := 64
 	batchSize := 4
 	embeddingDim := 128
 
 	// training settings
-	learningRate := 0.05
-	epochs := 25000
+	learningRate := 0.002
+	epochs := 1000
+
+	fmt.Println("Crawling web...")
+	samples := read()
 
 	// debugging values
 	var lossSum float64
 	var lossCount int
 
-	// read training data 
+	// read training data
 	bytes, err := os.ReadFile(trainingPath)
 	if err != nil {
 		panic(err)
 	}
+
 	source := string(bytes)
+
+
+	// merge web + local dataset
+	for _, s := range samples {
+		source += "\n<User> " + s.User + "\n<Assistant> " + s.Assistant + "\n"
+	}
+
+	if len(source) < 1000 {
+		panic("dataset too small after merging crawler + file")
+	}
+
 	tkzr := tokenizer.NewTokenizer(source)
-	
+
 	// train tokenizer
-	numMerges := 1000 
+	numMerges := 1000
 	fmt.Println("Training BPE Tokenizer...")
 	tkzr.Train(source, numMerges)
 	fmt.Printf("BPE Training complete. Final Vocab Size: %d\n", len(tkzr.Vocab))
-
+	
 	allTokens := tkzr.Encode(source)
+
+	if len(allTokens) < seqLen+2 {
+		panic("token stream too small for training")
+	}
 
 	vocabSize := len(tkzr.Vocab)
 
@@ -89,19 +148,35 @@ func main() {
 		tensor.Zero(dGamma2)
 		tensor.Zero(dBeta2)
 
+		mask := make([]float32, numTokens)
+
 		// build batches
 		for b := range batchSize {
-			seqStart := rand.Intn(len(allTokens) - seqLen - 1)
+			maxStart := len(allTokens) - seqLen - 1
+			if maxStart <= 0 {
+				panic("invalid token range")
+			}
+
+			seqStart := rand.Intn(maxStart)
+
 			for t := 0; t < seqLen; t++ {
 				flatIdx := b*seqLen + t
+
 				batchX[flatIdx] = allTokens[seqStart+t]
 				batchY[flatIdx] = allTokens[seqStart+t+1]
+
+				// last token has no target -> mask it out
+				if t == seqLen-1 {
+					mask[flatIdx] = 0
+				} else {
+					mask[flatIdx] = 1
+				}
 			}
 		}
 
 		// calculate loss
 		logits, cache := model.Forward(batchX, batchSize, buf)
-		loss := tensor.CalculateCrossEntropy(logits, batchY)
+		loss := tensor.CalculateCrossEntropy(logits, batchY, mask)
 		lossSum += loss
 		lossCount++
 
@@ -114,7 +189,7 @@ func main() {
 		}
 
 		// calculate backward loss
-		tensor.BackwardCrossEntropy(logits, batchY, dLogits)
+		tensor.BackwardCrossEntropy(logits, batchY, mask, dLogits)
 
 		// decay lr
 		decayedLR := learningRate * math.Exp(-0.00005*float64(step))

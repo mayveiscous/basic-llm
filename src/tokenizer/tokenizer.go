@@ -5,175 +5,189 @@ import (
 )
 
 type Tokenizer struct {
-	Vocab        map[string]int
-	InverseVocab map[int]string
-	Merges       map[string]string
-	MergeOrder   []string
+	Vocab         map[string]int
+	InverseVocab  map[int]string
+	Merges        map[string]string
+	MergeOrder    []string
+	SpecialTokens map[string]int
 }
 
+const sep = "\x00"
+
+// init vocab from corpus
 func NewTokenizer(text string) *Tokenizer {
 	vocab := make(map[string]int)
-	invVocab := make(map[int]string)
+	inv := make(map[int]string)
+
 	id := 0
 
-	for _, char := range text {
-		strChar := string(char)
-		if _, exists := vocab[strChar]; !exists {
-			vocab[strChar] = id
-			invVocab[id] = strChar
+	// define special tokens FIRST
+	special := []string{
+		"<PAD>",
+		"<NL>",
+		"<User>",
+		"<Assistant>",
+	}
+
+	specialMap := make(map[string]int)
+
+	for _, tok := range special {
+		vocab[tok] = id
+		inv[id] = tok
+		specialMap[tok] = id
+		id++
+	}
+
+	// normal character vocab
+	for _, r := range text {
+		s := string(r)
+		if _, ok := vocab[s]; !ok {
+			vocab[s] = id
+			inv[id] = s
 			id++
 		}
 	}
 
 	return &Tokenizer{
-		Vocab:        vocab,
-		InverseVocab: invVocab,
-		Merges:       make(map[string]string),
-		MergeOrder:   []string{},
+		Vocab:         vocab,
+		InverseVocab:  inv,
+		Merges:        make(map[string]string),
+		MergeOrder:    []string{},
+		SpecialTokens: specialMap,
 	}
 }
 
-// train the tokenizer
-// to recognize keywords
-// that appear often
-// (ie. "User:" and "Assistant:")
-func (t *Tokenizer) Train(text string, numMerges int) {
-	// trim whitespace
-	// split words to each character
-	words := strings.Split(text, " ")
-	splits := make([][]string, len(words))
+func toSymbols(text string) []string {
+	out := make([]string, 0, len(text))
+	for _, r := range text {
+		out = append(out, string(r))
+	}
+	return out
+}
 
-	// for each word
-	for i, word := range words {
-		runes := []rune(word)
-		splits[i] = make([]string, len(runes))
-
-		// compare this char and next char
-		for j, char := range runes {
-			splits[i][j] = string(char)
+// count pair frequencies globally
+func getPairCounts(corpus [][]string) map[string]int {
+	counts := make(map[string]int)
+	for _, seq := range corpus {
+		for i := 0; i < len(seq)-1; i++ {
+			pair := seq[i] + sep + seq[i+1]
+			counts[pair]++
 		}
 	}
+	return counts
+}
+
+// apply merge to entire corpus
+func applyMerge(corpus [][]string, pair string, merged string) [][]string {
+	parts := strings.SplitN(pair, sep, 2)
+	out := make([][]string, len(corpus))
+
+	for i, seq := range corpus {
+		var newSeq []string
+		for j := 0; j < len(seq); j++ {
+			if j < len(seq)-1 &&
+				seq[j] == parts[0] &&
+				seq[j+1] == parts[1] {
+				newSeq = append(newSeq, merged)
+				j++
+			} else {
+				newSeq = append(newSeq, seq[j])
+			}
+		}
+		out[i] = newSeq
+	}
+
+	return out
+}
+
+// train bpe
+func (t *Tokenizer) Train(text string, numMerges int) {
+	corpus := [][]string{}
+	symbols := toSymbols(text)
+	corpus = append(corpus, symbols)
 
 	nextID := len(t.Vocab)
 
-	for range numMerges {
-		pairCounts := make(map[string]int)
+	for i := 0; i < numMerges; i++ {
+		pairCounts := getPairCounts(corpus)
 
-		// compute pairs
-		// from each split
-		for _, wordSplit := range splits {
-			for j := 0; j < len(wordSplit)-1; j++ {
-				pair := wordSplit[j] + " " + wordSplit[j+1]
-				pairCounts[pair]++
+		bestPair := ""
+		bestCount := 0
+
+		for p, c := range pairCounts {
+			if c > bestCount {
+				bestCount = c
+				bestPair = p
 			}
 		}
 
-		// determine best pair
-		// based on how often it appears
-		var bestPair string
-		maxCount := 0
-		for pair, count := range pairCounts {
-			if count > maxCount {
-				maxCount = count
-				bestPair = pair
-			}
-		}
-
-		// all done if no best pairs
-		if maxCount == 0 {
+		if bestCount == 0 {
 			break
 		}
 
-		// split and merge
-		parts := strings.Split(bestPair, " ")
-		mergedStr := parts[0] + parts[1]
-		t.Merges[bestPair] = mergedStr
+		parts := strings.SplitN(bestPair, sep, 2)
+		merged := parts[0] + parts[1]
+
+		t.Merges[bestPair] = merged
 		t.MergeOrder = append(t.MergeOrder, bestPair)
 
-		// add to vocab and move to next word
-		t.Vocab[mergedStr] = nextID
-		t.InverseVocab[nextID] = mergedStr
+		t.Vocab[merged] = nextID
+		t.InverseVocab[nextID] = merged
 		nextID++
 
-		// find occurence of best pair
-		// and replace in every word
-		for sIdx, wordSplit := range splits {
-			var newSplit []string
-			for j := 0; j < len(wordSplit); j++ {
-				if j < len(wordSplit)-1 && wordSplit[j] == parts[0] && wordSplit[j+1] == parts[1] {
-					newSplit = append(newSplit, mergedStr)
-					j++
-				} else {
-					newSplit = append(newSplit, wordSplit[j])
-				}
-			}
-			splits[sIdx] = newSplit
-		}
+		corpus = applyMerge(corpus, bestPair, merged)
 	}
 }
 
-// bpe encode text into token ids
+// encode text into token ids
 func (t *Tokenizer) Encode(text string) []int {
-	// normalize whitespace
-	// and split into words
-	text = strings.ReplaceAll(text, "\n", " \n ")
-	words := strings.Fields(text)
-	var allTokens []int
+	symbols := toSymbols(text)
 
-	for _, word := range words {
-		// convert word into initial character symbols
-		runes := []rune(word)
-		symbols := make([]string, len(runes))
-		for i, char := range runes {
-			symbols[i] = string(char)
+	for _, pair := range t.MergeOrder {
+		parts := strings.SplitN(pair, sep, 2)
+		if len(parts) != 2 {
+			continue
 		}
 
-		// apply learned bpe merges (in training order)
-		for _, pair := range t.MergeOrder {
-			parts := strings.SplitN(pair, " ", 2)
-			if len(parts) != 2 {
-				continue
-			}
+		merged := t.Merges[pair]
+		var newSymbols []string
 
-			merged := t.Merges[pair]
-			var newSymbols []string
-			for i := 0; i < len(symbols); i++ {
-				if i < len(symbols)-1 && symbols[i] == parts[0] && symbols[i+1] == parts[1] {
-					newSymbols = append(newSymbols, merged)
-					i++
-				} else {
-					newSymbols = append(newSymbols, symbols[i])
-				}
-			}
-			symbols = newSymbols
-		}
-
-		// map final symbols to vocab ids
-		for _, sym := range symbols {
-			if id, exists := t.Vocab[sym]; exists {
-				allTokens = append(allTokens, id)
+		for i := 0; i < len(symbols); i++ {
+			if i < len(symbols)-1 &&
+				symbols[i] == parts[0] &&
+				symbols[i+1] == parts[1] {
+				newSymbols = append(newSymbols, merged)
+				i++
+			} else {
+				newSymbols = append(newSymbols, symbols[i])
 			}
 		}
 
-		// perserve word boundaries
-		if spaceID, exists := t.Vocab[" "]; exists {
-			allTokens = append(allTokens, spaceID)
+		symbols = newSymbols
+	}
+
+	var tokens []int
+	for _, s := range symbols {
+		if id, ok := t.Vocab[s]; ok {
+			tokens = append(tokens, id)
 		}
 	}
 
-	return allTokens
+	return tokens
 }
 
-// take tokens and rebuild text
+// decode tokens back to text
 func (t *Tokenizer) Decode(tokens []int) string {
 	var sb strings.Builder
 
 	for _, id := range tokens {
-		tokenStr, exists := t.InverseVocab[id]
-		if !exists {
-			continue
+		if s, ok := t.InverseVocab[id]; ok {
+			if s == "<NL>" {
+				sb.WriteString("\n")
+			} else {
+				sb.WriteString(s)
+			}
 		}
-		sb.WriteString(tokenStr)
 	}
 
 	return sb.String()
