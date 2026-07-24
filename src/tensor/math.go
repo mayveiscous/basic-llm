@@ -6,6 +6,8 @@ import (
 
 func Gelu(t *Tensor) {
 	for i, val := range t.Data {
+   // i could move these out of the loop
+   // or even the function?
 		const sqrt20overpi = 0.7978845608
 		const coeff = 0.044715
 		cube := coeff * val * val * val
@@ -15,6 +17,8 @@ func Gelu(t *Tensor) {
 
 func GeluDerivative(t, dT *Tensor) {
 	for i, x := range t.Data {
+   // could move these too
+   // a small benefit but no need to redeclare
 		const sqrt2OverPi = 0.7978845608
 		const coeff = 0.044715
 		x3 := x * x * x
